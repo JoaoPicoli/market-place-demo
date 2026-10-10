@@ -8,9 +8,383 @@ datasource db {
   shadowDatabaseUrl = env("SHADOW_DATABASE_URL")
 }
 
+enum ServiceRequestStatus {
+  OPEN
+  PAUSED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum ConversationStatus {
+  OPEN
+  CLOSED
+  ARCHIVED
+}
+
+enum QuoteStatus {
+  DRAFT
+  SENT
+  ACCEPTED
+  REJECTED
+  WITHDRAWN
+  EXPIRED
+  SUPERSEDED
+}
+
+enum MessageType {
+  TEXT
+  QUOTE
+}
+
+enum ServiceOrderStatus {
+  ACCEPTED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
 model User {
+  id           Int      @id @default(autoincrement())
+  name         String   @db.VarChar(191)
+  email        String   @unique @db.VarChar(191)
+  passwordHash String?  @db.VarChar(255)
+  avatarUrl    String?  @db.VarChar(2048)
+  pronouns     String?  @db.VarChar(60)
+  city         String?  @db.VarChar(120)
+  region       String?  @db.VarChar(120)
+  isDemo       Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @default(now()) @updatedAt
+
+  providerProfile ProviderProfile?
+  serviceRequests ServiceRequest[]
+  messages        Message[]
+}
+
+model Neighborhood {
   id        Int      @id @default(autoincrement())
-  name      String
-  email     String   @unique
+  slug      String   @unique @db.VarChar(160)
+  name      String   @db.VarChar(120)
+  city      String   @db.VarChar(120)
+  state     String   @db.Char(2)
   createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+
+  referenceProfiles ProviderProfile[]   @relation("ProviderReferenceNeighborhood")
+  serviceAreas      ProviderServiceArea[]
+  serviceRequests   ServiceRequest[]
+
+  @@unique([city, state, name])
+  @@index([city, state])
+}
+
+model ProviderProfile {
+  id                     Int      @id @default(autoincrement())
+  userId                 Int      @unique
+  referenceNeighborhoodId Int?
+  bio                    String?  @db.Text
+  serviceArea            String?  @db.Text
+  yearsExperience        Int?
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @default(now()) @updatedAt
+
+  user                    User                 @relation(fields: [userId], references: [id], onDelete: Restrict)
+  referenceNeighborhood   Neighborhood?        @relation("ProviderReferenceNeighborhood", fields: [referenceNeighborhoodId], references: [id], onDelete: Restrict)
+  services                Service[]
+  portfolioItems          PortfolioItem[]
+  conversations           Conversation[]
+  availability            Availability[]
+  serviceAreas            ProviderServiceArea[]
+
+  @@index([referenceNeighborhoodId])
+  @@index([yearsExperience])
+}
+
+model ProviderServiceArea {
+  id                Int      @id @default(autoincrement())
+  providerProfileId Int
+  neighborhoodId    Int
+  createdAt         DateTime @default(now())
+
+  providerProfile ProviderProfile @relation(fields: [providerProfileId], references: [id], onDelete: Cascade)
+  neighborhood    Neighborhood    @relation(fields: [neighborhoodId], references: [id], onDelete: Restrict)
+
+  @@unique([providerProfileId, neighborhoodId])
+  @@index([neighborhoodId, providerProfileId])
+}
+
+model Category {
+  id          Int      @id @default(autoincrement())
+  name        String   @unique @db.VarChar(150)
+  slug        String   @unique @db.VarChar(150)
+  description String?  @db.Text
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @default(now()) @updatedAt
+
+  services        Service[]
+  serviceRequests ServiceRequest[]
+}
+
+model Service {
+  id                Int      @id @default(autoincrement())
+  providerProfileId Int
+  categoryId        Int
+  title             String   @db.VarChar(180)
+  description       String   @db.Text
+  referencePrice    Decimal? @db.Decimal(10, 2)
+  isActive          Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @default(now()) @updatedAt
+
+  providerProfile ProviderProfile @relation(fields: [providerProfileId], references: [id], onDelete: Restrict)
+  category        Category        @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  portfolioItems  PortfolioItem[]
+  quotes          Quote[]
+
+  @@index([providerProfileId, isActive])
+  @@index([categoryId, isActive])
+  @@index([referencePrice, isActive])
+}
+
+// A demo item is never a verified platform job. For a real verified item,
+// backend logic must require a completed, non-demo order from this provider.
+model PortfolioItem {
+  id                Int      @id @default(autoincrement())
+  providerProfileId Int
+  serviceId         Int?
+  serviceOrderId    Int?     @unique
+  title             String   @db.VarChar(180)
+  description       String?  @db.Text
+  isDemo            Boolean
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @default(now()) @updatedAt
+
+  providerProfile ProviderProfile  @relation(fields: [providerProfileId], references: [id], onDelete: Restrict)
+  service         Service?         @relation(fields: [serviceId], references: [id], onDelete: SetNull)
+  serviceOrder    ServiceOrder?    @relation(fields: [serviceOrderId], references: [id], onDelete: Restrict)
+  images          PortfolioImage[]
+
+  @@index([providerProfileId, createdAt])
+}
+
+model PortfolioImage {
+  id              Int      @id @default(autoincrement())
+  portfolioItemId Int
+  imageUrl        String   @db.VarChar(2048)
+  altText         String?  @db.VarChar(255)
+  position        Int      @default(0)
+  createdAt       DateTime @default(now())
+
+  portfolioItem PortfolioItem @relation(fields: [portfolioItemId], references: [id], onDelete: Cascade)
+
+  @@unique([portfolioItemId, position])
+}
+
+model ServiceRequest {
+  id             Int                  @id @default(autoincrement())
+  clientUserId   Int
+  categoryId     Int?
+  neighborhoodId Int?
+  title          String               @db.VarChar(180)
+  description    String               @db.Text
+  city           String?              @db.VarChar(120)
+  region         String?              @db.VarChar(120)
+  budgetMin      Decimal?             @db.Decimal(10, 2)
+  budgetMax      Decimal?             @db.Decimal(10, 2)
+  desiredDate    DateTime?
+  reopenedAt     DateTime?            // Last explicit reopening after an order cancellation.
+  status         ServiceRequestStatus @default(OPEN)
+  isDemo         Boolean
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @default(now()) @updatedAt
+
+  client        User           @relation(fields: [clientUserId], references: [id], onDelete: Restrict)
+  category      Category?      @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  neighborhood  Neighborhood?  @relation(fields: [neighborhoodId], references: [id], onDelete: Restrict)
+  conversations Conversation[]
+  serviceOrders ServiceOrder[]
+
+  @@index([clientUserId, status, createdAt])
+  @@index([categoryId, status])
+  @@index([city, region, neighborhoodId, status])
+}
+
+model Conversation {
+  id                Int                @id @default(autoincrement())
+  serviceRequestId  Int
+  providerProfileId Int
+  status            ConversationStatus @default(OPEN)
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @default(now()) @updatedAt
+
+  serviceRequest  ServiceRequest  @relation(fields: [serviceRequestId], references: [id], onDelete: Restrict)
+  providerProfile ProviderProfile @relation(fields: [providerProfileId], references: [id], onDelete: Restrict)
+  messages        Message[]
+  quotes          Quote[]
+
+  @@unique([serviceRequestId, providerProfileId])
+  @@index([providerProfileId, status])
+}
+
+// Application invariant: TEXT requires a body and no quoteVersionId; QUOTE
+// requires a null body and a version in this same conversation. Prisma cannot
+// express the conditional/cross-relation checks in this MySQL schema.
+model Message {
+  id             Int         @id @default(autoincrement())
+  conversationId Int
+  senderUserId   Int
+  type           MessageType @default(TEXT)
+  body           String?     @db.Text
+  quoteVersionId Int?        @unique
+  createdAt      DateTime    @default(now())
+
+  conversation Conversation  @relation(fields: [conversationId], references: [id], onDelete: Restrict)
+  sender       User          @relation(fields: [senderUserId], references: [id], onDelete: Restrict)
+  quoteVersion QuoteVersion? @relation(fields: [quoteVersionId], references: [id], onDelete: Restrict)
+
+  @@index([conversationId, createdAt])
+}
+
+// Quote is the identity of one independent commercial offer. Comparisons group
+// independent offers by ServiceRequest through Conversation.serviceRequestId.
+model Quote {
+  id             Int      @id @default(autoincrement())
+  conversationId Int
+  serviceId      Int?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @default(now()) @updatedAt
+
+  conversation Conversation   @relation(fields: [conversationId], references: [id], onDelete: Restrict)
+  service      Service?       @relation(fields: [serviceId], references: [id], onDelete: SetNull)
+  versions     QuoteVersion[]
+
+  @@index([conversationId, createdAt])
+  @@index([serviceId])
+}
+
+// Each version is an immutable commercial snapshot. Backend logic must make
+// version numbers sequential, supersede only the previous version in this
+// Quote chain, verify the optional service belongs to the conversation's
+// provider, and prohibit edits to sent fields or items.
+model QuoteVersion {
+  id                    Int         @id @default(autoincrement())
+  quoteId               Int
+  version               Int
+  previousVersionId     Int?        @unique
+  scopeDescription      String      @db.Text
+  serviceTitleSnapshot String?     @db.VarChar(180)
+  totalAmount           Decimal     @db.Decimal(10, 2)
+  estimatedDurationDays Int?
+  validUntil            DateTime
+  proposedStartAt       DateTime?
+  proposedEndAt         DateTime?
+  terms                 String?     @db.Text
+  status                QuoteStatus @default(DRAFT)
+  createdAt             DateTime    @default(now())
+  sentAt                DateTime?
+  updatedAt             DateTime    @default(now()) @updatedAt
+
+  quote           Quote          @relation(fields: [quoteId], references: [id], onDelete: Restrict)
+  previousVersion QuoteVersion?  @relation("QuoteVersionChain", fields: [previousVersionId], references: [id], onDelete: Restrict)
+  nextVersion     QuoteVersion?  @relation("QuoteVersionChain")
+  items           QuoteItem[]
+  message         Message?
+  serviceOrder    ServiceOrder?
+
+  @@unique([quoteId, version])
+  @@index([quoteId, status])
+  @@index([status, validUntil])
+}
+
+model QuoteItem {
+  id             Int      @id @default(autoincrement())
+  quoteVersionId Int
+  position       Int
+  description    String   @db.VarChar(255)
+  quantity       Decimal  @default(1.00) @db.Decimal(10, 2)
+  unitPrice      Decimal  @db.Decimal(10, 2)
+  createdAt      DateTime @default(now())
+
+  quoteVersion QuoteVersion @relation(fields: [quoteVersionId], references: [id], onDelete: Restrict)
+
+  @@unique([quoteVersionId, position])
+}
+
+// Architectural invariant: acceptedQuoteVersion.quote.conversation.serviceRequestId
+// must equal serviceRequestId. The backend must lock the request and atomically
+// validate state, current SENT leaf, validity, no active order, and no completed
+// historical order. A cancelled order remains historical; only an explicitly
+// reopened request may accept a new independent quote. The ordinary index is
+// not an active-order uniqueness constraint. acceptedQuoteVersionId prevents
+// reusing the same accepted version.
+model ServiceOrder {
+  id                    Int                @id @default(autoincrement())
+  serviceRequestId      Int
+  acceptedQuoteVersionId Int               @unique
+  status                ServiceOrderStatus @default(ACCEPTED)
+  isDemo                Boolean
+  acceptedAt            DateTime           @default(now())
+  startedAt             DateTime?
+  completedAt           DateTime?
+  cancelledAt           DateTime?
+  createdAt             DateTime           @default(now())
+  updatedAt             DateTime           @default(now()) @updatedAt
+
+  serviceRequest       ServiceRequest @relation(fields: [serviceRequestId], references: [id], onDelete: Restrict)
+  acceptedQuoteVersion QuoteVersion   @relation(fields: [acceptedQuoteVersionId], references: [id], onDelete: Restrict)
+  review               Review?
+  portfolioItem        PortfolioItem?
+
+  @@index([serviceRequestId, status])
+  @@index([status, completedAt])
+}
+
+// Keep this explicit flag consistent with its order. Reputation aggregation
+// must exclude demo reviews and orders, and include only completed orders.
+model Review {
+  id             Int      @id @default(autoincrement())
+  serviceOrderId Int      @unique
+  rating         Int
+  comment        String?  @db.Text
+  isDemo         Boolean
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @default(now()) @updatedAt
+
+  serviceOrder ServiceOrder @relation(fields: [serviceOrderId], references: [id], onDelete: Restrict)
+
+  @@index([isDemo, createdAt])
+}
+
+// ISO-8601 weekday numbering: 1=Monday through 7=Sunday; 6 is Saturday.
+// No row means availability is unknown, not that the provider is unavailable.
+model Availability {
+  id                Int      @id @default(autoincrement())
+  providerProfileId Int
+  dayOfWeek         Int
+  startMinute       Int
+  endMinute         Int
+  timeZone          String?  @db.VarChar(64)
+  isActive          Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @default(now()) @updatedAt
+
+  providerProfile ProviderProfile @relation(fields: [providerProfileId], references: [id], onDelete: Cascade)
+
+  @@unique([providerProfileId, dayOfWeek, startMinute, endMinute])
+  @@index([providerProfileId, dayOfWeek, isActive])
+  @@index([dayOfWeek, isActive, providerProfileId])
+}
+
+// Polymorphic ownership manifest for the deterministic demo seed. entityId
+// intentionally has no FK because it identifies rows in multiple tables;
+// seed cleanup validates every recorded ID and all relationships before delete.
+model DemoSeedOwnership {
+  id         Int      @id @default(autoincrement())
+  seedKey    String   @db.VarChar(100)
+  entityType String   @db.VarChar(40)
+  entityId   Int
+  createdAt  DateTime @default(now())
+
+  @@unique([seedKey, entityType, entityId])
 }
