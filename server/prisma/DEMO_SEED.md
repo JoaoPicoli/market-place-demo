@@ -4,8 +4,8 @@
 
 ## Volume e cenários
 
-- 100 usuários, 84 perfis profissionais; algumas contas atuam também como clientes.
-- 13 categorias, 23 bairros de Curitiba/PR, 210 serviços e 200 itens de portfólio.
+- 101 usuários, 85 perfis profissionais; algumas contas atuam também como clientes.
+- 13 categorias, 23 bairros de Curitiba/PR, 211 serviços e 200 itens de portfólio.
 - 64 solicitações, 170 conversas, 201 propostas independentes e 231 versões.
 - 571 mensagens, 39 ordens, 24 avaliações e disponibilidade semanal para 55 prestadores.
 - Sessenta conversas têm pelo menos duas propostas independentes. Trinta propostas têm uma revisão; cada versão enviada tem seu próprio card no chat.
@@ -13,6 +13,8 @@
 - `request-061` demonstra recontratação: uma ordem cancelada e sua versão aceita permanecem no histórico; `reopenedAt` registra a reabertura, uma nova proposta independente é aceita e uma segunda ordem fica em andamento na mesma solicitação. Nenhuma das duas ordens foi apagada.
 
 Todas as contas usam o domínio reservado `.invalid` e `User.isDemo = true`. Solicitações, ordens, avaliações e itens de portfólio têm `isDemo = true`. As avaliações demonstrativas não entram na reputação real. Os portfólios não têm ordem vinculada e não são verificados. O frontend não possui retratos nem imagens de portfólio adequados; por isso o seed deixa `avatarUrl` nulo e não cria referências quebradas nem imagens. A interface deve apresentar um fallback estável.
+
+O fixture inclui Maria Luiza Rosner como perfil prestador fictício de homenagem, com o serviço “Farmar aura”. A biografia e a descrição do serviço identificam o registro como easter egg demonstrativo, sem representar uma pessoa ou oferta profissional real.
 
 ## Datas
 

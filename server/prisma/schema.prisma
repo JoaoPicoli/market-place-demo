@@ -252,6 +252,8 @@ model Quote {
   id             Int      @id @default(autoincrement())
   conversationId Int
   serviceId      Int?
+  idempotencyKey String?  @unique @db.VarChar(64)
+  idempotencyHash String? @db.Char(64)
   createdAt      DateTime @default(now())
   updatedAt      DateTime @default(now()) @updatedAt
 
@@ -281,6 +283,8 @@ model QuoteVersion {
   proposedEndAt         DateTime?
   terms                 String?     @db.Text
   status                QuoteStatus @default(DRAFT)
+  idempotencyKey        String?     @unique @db.VarChar(64)
+  idempotencyHash       String?     @db.Char(64)
   createdAt             DateTime    @default(now())
   sentAt                DateTime?
   updatedAt             DateTime    @default(now()) @updatedAt

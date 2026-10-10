@@ -2,9 +2,10 @@
 ALTER TABLE `ServiceRequest`
     ADD COLUMN `reopenedAt` DATETIME(3) NULL;
 
-DROP INDEX `ServiceOrder_serviceRequestId_key` ON `ServiceOrder`;
 CREATE INDEX `ServiceOrder_serviceRequestId_status_idx`
     ON `ServiceOrder`(`serviceRequestId`, `status`);
+
+DROP INDEX `ServiceOrder_serviceRequestId_key` ON `ServiceOrder`;
 
 CREATE TABLE `DemoSeedOwnership` (
     `id` INTEGER NOT NULL AUTO_INCREMENT,

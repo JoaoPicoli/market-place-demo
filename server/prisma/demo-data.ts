@@ -182,6 +182,11 @@ export function buildDemoFixture(): DemoFixture {
       city: "Curitiba", region: "PR", isDemo: true, createdAt: days(DEMO_REFERENCE_DATE, -250 - i), updatedAt: DEMO_REFERENCE_DATE });
   }
 
+  // Easter egg explicitamente fictício, reservado ao ambiente demonstrativo.
+  const mariaKey = "provider-easter-egg-maria-luiza-rosner";
+  users.push({ key: mariaKey, name: "Maria Luiza Rosner", email: `${mariaKey}@${DEMO_EMAIL_DOMAIN}`, pronouns: "ela/dela",
+    city: "Curitiba", region: "PR", isDemo: true, createdAt: days(DEMO_REFERENCE_DATE, -90), updatedAt: DEMO_REFERENCE_DATE });
+
   const providers: DemoProvider[] = [];
   const services: DemoService[] = [];
   const categoriesBySlug = new Map(categories.map((category) => [category.slug, category]));
@@ -232,6 +237,14 @@ export function buildDemoFixture(): DemoFixture {
         createdAt: days(DEMO_REFERENCE_DATE, -180 - i), updatedAt: DEMO_REFERENCE_DATE });
     }
   }
+
+  providers.push({ userKey: mariaKey,
+    bio: "Perfil fictício criado como homenagem e easter egg desta versão de teste. Sua especialidade de brincadeira é farmar aura; não representa uma oferta profissional real.",
+    serviceArea: "Perfil demonstrativo em Curitiba.", yearsExperience: 0, referenceNeighborhoodSlug: "centro",
+    neighborhoodSlugs: ["centro"], categorySlugs: ["pequenos-reparos"] });
+  services.push({ key: "service-easter-egg-farmar-aura", providerUserKey: mariaKey, categorySlug: "pequenos-reparos",
+    title: "Farmar aura", description: "Easter egg fictício desta demonstração; não é um serviço real nem uma oferta profissional.",
+    referencePrice: "42.00", isActive: true, createdAt: days(DEMO_REFERENCE_DATE, -30), updatedAt: DEMO_REFERENCE_DATE });
 
   const providerServiceAreas = providers.flatMap((provider) => provider.neighborhoodSlugs.map((neighborhoodSlug) => ({ providerUserKey: provider.userKey, neighborhoodSlug })));
   const portfolio: DemoPortfolio[] = Array.from({ length: 200 }, (_, index) => {
@@ -555,9 +568,9 @@ function buildRemainingFixture(base: Pick<DemoFixture, "users" | "providers" | "
 export function validateDemoFixture(fixture: DemoFixture): void {
   const assert: (condition: unknown, message: string) => asserts condition = (condition, message) => { if (!condition) throw new Error(message); };
   const expectedCounts: [string, number, number][] = [
-    ["usuários", fixture.users.length, 100], ["prestadores", fixture.providers.length, 84], ["categorias", fixture.categories.length, 13],
+    ["usuários", fixture.users.length, 101], ["prestadores", fixture.providers.length, 85], ["categorias", fixture.categories.length, 13],
     ["bairros", fixture.neighborhoods.length, 23],
-    ["serviços", fixture.services.length, 210], ["portfólio", fixture.portfolio.length, 200], ["solicitações", fixture.requests.length, 64],
+    ["serviços", fixture.services.length, 211], ["portfólio", fixture.portfolio.length, 200], ["solicitações", fixture.requests.length, 64],
     ["conversas", fixture.conversations.length, 170], ["propostas independentes", fixture.quotes.length, 201],
     ["versões de orçamento", fixture.quotes.reduce((sum, quote) => sum + quote.versions.length, 0), 231],
     ["mensagens", fixture.messages.length, 571], ["ordens", fixture.orders.length, 39], ["avaliações", fixture.reviews.length, 24],
@@ -568,6 +581,9 @@ export function validateDemoFixture(fixture: DemoFixture): void {
   assert(fixture.requests.some((request) => providerKeys.has(request.clientUserKey)), "O fixture deve demonstrar uma conta atuando como cliente e prestador.");
   assert(fixture.users.every((user) => user.isDemo && user.email.endsWith(`@${DEMO_EMAIL_DOMAIN}`)), "Todas as contas devem ser demonstrativas e usar o domínio reservado.");
   assert(fixture.users.every((user) => user.name.trim().length > 3 && !user.name.includes("undefined")), "Há nome de demonstração ausente ou inválido.");
+  assert(fixture.providers.some((provider) => provider.userKey === "provider-easter-egg-maria-luiza-rosner")
+    && fixture.services.some((service) => service.providerUserKey === "provider-easter-egg-maria-luiza-rosner" && service.title === "Farmar aura"),
+  "O easter egg fictício de Maria Luiza Rosner deve permanecer no fixture.");
   assert(fixture.requests.every((request) => request.isDemo && fixture.neighborhoods.some((item) => item.slug === request.neighborhoodSlug)), "Toda solicitação deve ser demo e apontar para um bairro do catálogo.");
   assert(fixture.requests.every((request) => request.createdAt <= DEMO_REFERENCE_DATE
     && (request.reopenedAt === null || request.reopenedAt <= DEMO_REFERENCE_DATE)), "Solicitação ou reabertura com evento futuro em relação à referência.");
@@ -605,7 +621,9 @@ export function validateDemoFixture(fixture: DemoFixture): void {
   }
   for (const provider of fixture.providers) {
     const providerServices = fixture.services.filter((service) => service.providerUserKey === provider.userKey);
-    assert(providerServices.length === 2 || providerServices.length === 3, `Quantidade de serviços inesperada para ${provider.userKey}.`);
+    const isEasterEgg = provider.userKey === "provider-easter-egg-maria-luiza-rosner";
+    assert(isEasterEgg ? providerServices.length === 1 : providerServices.length === 2 || providerServices.length === 3,
+      `Quantidade de serviços inesperada para ${provider.userKey}.`);
     assert(providerServices.every((service) => provider.categorySlugs.includes(service.categorySlug)), `Categoria de serviço não está declarada no perfil ${provider.userKey}.`);
   }
   for (const conversation of fixture.conversations) {
