@@ -4,6 +4,7 @@ import { ArrowLeft, BadgeCheck, BriefcaseBusiness, CalendarDays, Clock3, MapPin,
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { ApiRequestError, getProvider, startConversation } from "../api";
 import { Avatar } from "../components/Avatar";
+import { applyCardTilt, resetCardTilt } from "../components/cardMotion";
 import { useDemoIdentity } from "../components/useDemoIdentity";
 import { SiteHeader } from "../components/SiteHeader";
 
@@ -125,7 +126,7 @@ export function ProviderPage() {
               {provider.services.length ? (
                 <div className="service-list">
                   {provider.services.map((service) => (
-                    <article className="service-row" key={service.id}>
+                    <article className="service-row interactive-card" key={service.id} onPointerMove={applyCardTilt} onPointerLeave={resetCardTilt}>
                       <div>
                         <span className="service-category">{service.category.name}</span>
                         <h3>{service.title}</h3>
@@ -146,7 +147,7 @@ export function ProviderPage() {
               {provider.portfolio.length ? (
                 <div className="portfolio-grid">
                   {provider.portfolio.map((item) => (
-                    <article className="portfolio-card" key={item.id}>
+                    <article className="portfolio-card interactive-card" key={item.id} onPointerMove={applyCardTilt} onPointerLeave={resetCardTilt}>
                       {item.images.length ? (
                         <div className="portfolio-image-grid">
                           {item.images.map((image) => <img key={image.id} src={image.imageUrl} alt={image.altText || item.title} loading="lazy" />)}
@@ -174,7 +175,7 @@ export function ProviderPage() {
                   <p className="review-disclaimer">Avaliações fictícias de demonstração — não entram na reputação real.</p>
                   <div className="review-list">
                     {provider.demoReviews.map((review) => (
-                      <article className="review-card" key={review.id}>
+                      <article className="review-card interactive-card" key={review.id} onPointerMove={applyCardTilt} onPointerLeave={resetCardTilt}>
                         <div className="review-topline"><span className="demo-pill">Demonstração</span><time dateTime={review.createdAt}>{new Intl.DateTimeFormat("pt-BR", { dateStyle: "medium" }).format(new Date(review.createdAt))}</time></div>
                         <div className="review-stars" aria-label={`${review.rating} de 5 estrelas`}>
                           {Array.from({ length: 5 }, (_, index) => <Star key={index} size={15} fill={index < review.rating ? "currentColor" : "none"} />)}

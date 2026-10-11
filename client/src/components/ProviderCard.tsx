@@ -2,6 +2,7 @@ import { ArrowUpRight, BriefcaseBusiness, MapPin, Star } from "lucide-react";
 import { Link } from "react-router-dom";
 import type { ProviderSummary } from "../api";
 import { Avatar } from "./Avatar";
+import { applyCardTilt, resetCardTilt } from "./cardMotion";
 
 const currency = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 });
 
@@ -18,7 +19,7 @@ export function ProviderCard({ provider, requestId }: ProviderCardProps) {
     : provider.referenceNeighborhood?.name ?? "Curitiba";
 
   return (
-    <article className="provider-card">
+    <article className="provider-card interactive-card" onPointerMove={applyCardTilt} onPointerLeave={resetCardTilt}>
       <div className="provider-card-top">
         <Avatar name={provider.name} imageUrl={provider.avatarUrl} className="avatar-card" />
         <div className="provider-card-identity">

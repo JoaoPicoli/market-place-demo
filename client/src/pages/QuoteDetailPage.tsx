@@ -1,8 +1,9 @@
 ﻿import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, BadgeCheck, CalendarClock, CheckCircle2, Clock3, PackageCheck } from "lucide-react";
+import { ArrowLeft, BadgeCheck, CalendarClock, CheckCircle2, Clock3, PackageCheck, RotateCcw } from "lucide-react";
 import { Link, useParams } from "react-router-dom";
-import { acceptQuoteVersion, getQuote, getServiceRequest } from "../api";
+import { acceptQuoteVersion, getQuote, getServiceRequest, restoreQuoteVersion } from "../api";
 import { Avatar } from "../components/Avatar";
+import { applyCardTilt, resetCardTilt } from "../components/cardMotion";
 import { SiteHeader } from "../components/SiteHeader";
 import { useDemoIdentity } from "../components/useDemoIdentity";
 import { WorkflowState } from "./MyRequestsPage";
@@ -39,6 +40,18 @@ export function QuoteDetailPage() {
       ]);
     },
   });
+  const restoreMutation = useMutation({
+    mutationFn: (versionId: number) => restoreQuoteVersion(identityId!, versionId),
+    onSuccess: async (result) => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["quote", identityId, quoteId] }),
+        queryClient.invalidateQueries({ queryKey: ["service-request", identityId, quote?.serviceRequestId] }),
+        queryClient.invalidateQueries({ queryKey: ["service-request-quotes", identityId, quote?.serviceRequestId] }),
+        queryClient.invalidateQueries({ queryKey: ["conversation-messages", identityId, result.data.conversationId] }),
+        queryClient.invalidateQueries({ queryKey: ["conversations-inbox", identityId] }),
+      ]);
+    },
+  });
   const isProvider = quote !== undefined && identity?.providerProfileId === quote.provider.id;
   const matchingOrder = requestQuery.data?.data.serviceOrders.find((order) => quote?.versions.some((version) => version.id === order.acceptedVersion.id));
 
@@ -65,7 +78,7 @@ export function QuoteDetailPage() {
                       {isProvider && quote.canRevise && <Link className="button-secondary" to={`/conversas/${quote.conversationId}?revisar=${quote.id}`}>Criar nova revisão</Link>}
                     </div>
                     <div className="quote-version-list">
-                      {quote.versions.map((version) => <article className={`quote-version-card ${version.isCurrent ? "quote-version-current" : ""}`} key={version.id}>
+                      {quote.versions.map((version) => <article className={`quote-version-card interactive-card ${version.isCurrent ? "quote-version-current" : ""}`} key={version.id} onPointerMove={applyCardTilt} onPointerLeave={resetCardTilt}>
                         <header><div><span className="eyebrow">Versão {version.version}{version.isCurrent ? " · vigente" : " · histórico"}</span><h3>{version.serviceTitleSnapshot ?? quote.service?.title ?? "Serviço sob medida"}</h3></div><span className={`status-pill status-${version.status.toLowerCase()}`}>{statusLabels[version.status] ?? version.status}</span></header>
                         <div className="quote-total-line"><strong>{currency(version.totalAmount)}</strong><span>{version.estimatedDurationDays ? `${version.estimatedDurationDays} dias estimados` : "Prazo não informado"}</span></div>
                         <p className="quote-scope">{version.scopeDescription}</p>
@@ -75,10 +88,13 @@ export function QuoteDetailPage() {
                         </div>
                         {version.status === "SUPERSEDED" && <p className="superseded-note"><Clock3 size={14} /> Esta versão foi substituída e permanece disponível apenas para consulta.</p>}
                         {version.canAccept && !isProvider && <div className="quote-accept-row"><span><CalendarClock size={15} /> Válida até {dateTime(version.validUntil)}</span><button className="button-primary" onClick={() => acceptMutation.mutate(version.id)} disabled={acceptMutation.isPending}><CheckCircle2 size={16} />{acceptMutation.isPending ? "Confirmando…" : "Aceitar esta versão"}</button></div>}
+                        {version.storedStatus === "REJECTED" && requestQuery.data?.data.viewerRole === "CUSTOMER" && <div className="quote-restore-row"><button className="button-secondary quote-restore-action" type="button" disabled={!version.canRestore || restoreMutation.isPending || acceptMutation.isPending} title={version.restoreUnavailableReason ?? "Restaurar esta proposta para voltar à comparação."} onClick={() => restoreMutation.mutate(version.id)}><RotateCcw size={15} aria-hidden="true" />{restoreMutation.isPending ? "Restaurando…" : "Restaurar proposta"}</button>{version.restoreUnavailableReason && <small className="quote-restore-reason">{version.restoreUnavailableReason}</small>}</div>}
                       </article>)}
                     </div>
                     {acceptMutation.isError && <p className="form-error quote-operation-error" role="alert">{acceptMutation.error.message}</p>}
                     {acceptMutation.isSuccess && <p className="form-success quote-operation-error" role="status">Pedido criado a partir da versão selecionada. O conteúdo comercial foi preservado.</p>}
+                    {restoreMutation.isError && <p className="form-error quote-operation-error" role="alert">{restoreMutation.error.message}</p>}
+                    {restoreMutation.isSuccess && <p className="form-success quote-operation-error" role="status">Proposta restaurada e disponível novamente na comparação. A recusa anterior continua no histórico da conversa.</p>}
                     {isProvider && <p className="demo-form-note">A identidade atual pertence ao prestador. Apenas o consumidor proprietário da solicitação pode aceitar.</p>}
                   </section>
                   <div className="quote-detail-footer"><Link to={`/conversas/${quote.conversationId}`} className="button-secondary">Abrir conversa</Link></div>

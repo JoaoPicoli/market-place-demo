@@ -1,9 +1,12 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronLeft, ChevronRight, MapPin, Search, ShieldCheck, SlidersHorizontal } from "lucide-react";
-import { getCategories, getNeighborhoods, getProviders } from "../api";
+import { getCategories, getNeighborhoods, getProviderCoverage, getProviders } from "../api";
+import { AIServiceSearch } from "../components/AIServiceSearch";
+import { CuritibaRegionMap } from "../components/CuritibaRegionMap";
 import { ProviderCard } from "../components/ProviderCard";
 import { SiteHeader } from "../components/SiteHeader";
+import { WarpText } from "../components/WarpText";
 import { useSearchParams } from "react-router-dom";
 
 const PAGE_SIZE = 12;
@@ -13,6 +16,7 @@ export function DirectoryPage() {
   const queryText = searchParams.get("q") ?? "";
   const categoryId = searchParams.get("categoryId") ?? "";
   const neighborhoodId = searchParams.get("neighborhoodId") ?? "";
+  const regionSlug = searchParams.get("regionSlug") ?? "";
   const requestId = searchParams.get("requestId") ?? undefined;
   const currentPage = Math.max(1, Number(searchParams.get("page") ?? 1) || 1);
   const [searchState, setSearchState] = useState({ query: queryText, value: queryText });
@@ -37,18 +41,24 @@ export function DirectoryPage() {
 
   const categoriesQuery = useQuery({ queryKey: ["categories"], queryFn: getCategories, staleTime: 5 * 60_000 });
   const neighborhoodsQuery = useQuery({ queryKey: ["neighborhoods"], queryFn: getNeighborhoods, staleTime: 5 * 60_000 });
+  const coverageQuery = useQuery({
+    queryKey: ["provider-coverage", queryText, categoryId],
+    queryFn: () => getProviderCoverage({ q: queryText || undefined, categoryId: categoryId || undefined }),
+    staleTime: 60_000,
+  });
   const providersQuery = useQuery({
-    queryKey: ["providers", queryText, categoryId, neighborhoodId, currentPage],
+    queryKey: ["providers", queryText, categoryId, neighborhoodId, regionSlug, currentPage],
     queryFn: () => getProviders({
       q: queryText || undefined,
       categoryId: categoryId || undefined,
       neighborhoodId: neighborhoodId || undefined,
+      regionSlug: regionSlug || undefined,
       page: currentPage,
       limit: PAGE_SIZE,
     }),
   });
 
-  const hasFilters = Boolean(queryText || categoryId || neighborhoodId);
+  const hasFilters = Boolean(queryText || categoryId || neighborhoodId || regionSlug);
   const results = providersQuery.data;
   const resultLabel = useMemo(() => {
     if (!results) return "";
@@ -59,6 +69,8 @@ export function DirectoryPage() {
     const next = new URLSearchParams(searchParams);
     if (value) next.set(key, value);
     else next.delete(key);
+    if (key === "regionSlug") next.delete("neighborhoodId");
+    if (key === "neighborhoodId") next.delete("regionSlug");
     next.delete("page");
     setSearchParams(next);
   }
@@ -94,9 +106,10 @@ export function DirectoryPage() {
           <div className="shell hero-inner">
             <div className="hero-copy">
               <div className="eyebrow hero-kicker"><MapPin size={14} /> Curitiba e região</div>
-              <h1>Encontre quem resolve.<br /><span>Do seu jeito.</span></h1>
+              <h1>Encontre quem<br />resolve.<br /><WarpText className="hero-warp" text="Do seu jeito." /></h1>
               <p>Profissionais locais para os cuidados da sua casa, com serviços e áreas de atendimento em um só lugar.</p>
             </div>
+            <div className="hero-tools">
             <div className="search-panel">
               <form className="search-form" onSubmit={submitSearch}>
                 <Search size={20} aria-hidden="true" />
@@ -135,8 +148,22 @@ export function DirectoryPage() {
                 <p className="filter-error">Não foi possível carregar todos os filtros. Tente novamente em instantes.</p>
               )}
             </div>
+            <CuritibaRegionMap
+              regions={coverageQuery.data?.data}
+              totalProviderCount={coverageQuery.data?.totalProviderCount ?? 0}
+              selectedRegion={regionSlug}
+              isLoading={coverageQuery.isPending}
+              error={coverageQuery.isError ? coverageQuery.error.message : null}
+              onSelect={(slug) => setFilter("regionSlug", slug)}
+              onRetry={() => void coverageQuery.refetch()}
+            />
+            </div>
           </div>
         </section>
+
+        <div className="shell ai-search-placement">
+          <AIServiceSearch requestId={requestId} />
+        </div>
 
         <section className="shell results-section" id="profissionais">
           <div className="demo-notice"><ShieldCheck size={17} />

@@ -156,8 +156,28 @@ export interface ProviderFilters {
   q?: string;
   categoryId?: string;
   neighborhoodId?: string;
+  regionSlug?: string;
   page: number;
   limit: number;
+}
+
+export interface ProviderCoverageRegion {
+  slug: string;
+  name: string;
+  providerCount: number | null;
+  neighborhoods: Pick<Neighborhood, "id" | "slug" | "name">[];
+}
+
+export function getProviderCoverage(filters: Pick<ProviderFilters, "q" | "categoryId">): Promise<{
+  data: ProviderCoverageRegion[];
+  totalProviderCount: number;
+  city: string;
+  state: string;
+}> {
+  const query = new URLSearchParams();
+  if (filters.q) query.set("q", filters.q);
+  if (filters.categoryId) query.set("categoryId", filters.categoryId);
+  return getJson(`/api/providers/coverage?${query.toString()}`);
 }
 
 export function getProviders(filters: ProviderFilters): Promise<ProviderPage> {
@@ -168,7 +188,35 @@ export function getProviders(filters: ProviderFilters): Promise<ProviderPage> {
   if (filters.q) query.set("q", filters.q);
   if (filters.categoryId) query.set("categoryId", filters.categoryId);
   if (filters.neighborhoodId) query.set("neighborhoodId", filters.neighborhoodId);
+  if (filters.regionSlug) query.set("regionSlug", filters.regionSlug);
   return getJson(`/api/providers?${query.toString()}`);
+}
+
+export interface AiSearchFilters {
+  category: Pick<Category, "id" | "name"> | null;
+  neighborhood: Pick<Neighborhood, "id" | "name"> | null;
+  minPrice: number | null;
+  maxPrice: number | null;
+  minExperienceYears: number | null;
+  availableSaturday: boolean | null;
+  searchTerms: string[];
+}
+
+export interface AiProviderPage extends ProviderPage {
+  interpretation: {
+    summary: string;
+    category: AiSearchFilters["category"];
+    neighborhood: AiSearchFilters["neighborhood"];
+    minPrice: number | null;
+    maxPrice: number | null;
+    minExperienceYears: number | null;
+    availableSaturday: boolean | null;
+    searchTerms: string[];
+  };
+}
+
+export function searchProvidersWithAI(input: { query: string; page: number; limit: number }): Promise<AiProviderPage> {
+  return requestJson<AiProviderPage>("/api/providers/ai-search", { method: "POST", body: input });
 }
 
 export function getProvider(id: number): Promise<{ data: ProviderProfile }> {
@@ -247,6 +295,8 @@ export interface QuoteVersionSummary {
   storedStatus: QuoteStatus;
   isCurrent: boolean;
   canAccept: boolean;
+  canRestore: boolean;
+  restoreUnavailableReason: string | null;
   message: { id: number; createdAt: string } | null;
   items: QuoteItem[];
 }
@@ -436,6 +486,14 @@ export function createQuoteVersion(identityId: number, quoteId: number, input: Q
 
 export function acceptQuoteVersion(identityId: number, versionId: number): Promise<{ data: ServiceOrderSummary; replayed: boolean }> {
   return postJson(`/api/quote-versions/${versionId}/accept`, identityId, {});
+}
+
+export function rejectQuoteVersion(identityId: number, versionId: number): Promise<{ data: QuoteSummary; replayed: boolean }> {
+  return postJson(`/api/quote-versions/${versionId}/reject`, identityId, {});
+}
+
+export function restoreQuoteVersion(identityId: number, versionId: number): Promise<{ data: QuoteSummary; replayed: boolean }> {
+  return postJson(`/api/quote-versions/${versionId}/restore`, identityId, {});
 }
 
 export function getServiceOrder(identityId: number, orderId: number): Promise<{ data: ServiceOrderSummary }> {

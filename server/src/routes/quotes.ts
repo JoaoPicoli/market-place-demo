@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+﻿import { createHash } from "node:crypto";
 import { Prisma } from "@prisma/client";
 import { Router } from "express";
 import { z } from "zod";
@@ -225,6 +225,19 @@ function quoteResponse(quote: NonNullable<Awaited<ReturnType<typeof loadQuote>>>
       const canAccept = isCurrent && version.status === "SENT" && !isExpired
         && request.status === "OPEN" && conversation.status === "OPEN"
         && !activeOrder && !completedOrder && reopenedAfterCancellation;
+      const canRestore = isCurrent && version.status === "REJECTED" && version.validUntil.getTime() > now
+        && request.status === "OPEN" && conversation.status === "OPEN"
+        && !activeOrder && !completedOrder && reopenedAfterCancellation;
+      let restoreUnavailableReason: string | null = null;
+      if (isCurrent && version.status === "REJECTED" && !canRestore) {
+        if (version.validUntil.getTime() <= now) restoreUnavailableReason = "A validade desta proposta terminou.";
+        else if (completedOrder) restoreUnavailableReason = "Esta solicitação já foi concluída e não pode gerar outra contratação.";
+        else if (activeOrder) restoreUnavailableReason = "Há um pedido ativo para esta solicitação.";
+        else if (request.status !== "OPEN") restoreUnavailableReason = "Reabra a solicitação antes de restaurar uma proposta.";
+        else if (conversation.status !== "OPEN") restoreUnavailableReason = "Esta conversa está encerrada.";
+        else if (!reopenedAfterCancellation) restoreUnavailableReason = "Depois do cancelamento, reabra a solicitação para negociar novamente.";
+        else restoreUnavailableReason = "Esta proposta não atende às condições para restauração.";
+      }
       return {
         id: version.id,
         version: version.version,
@@ -241,6 +254,8 @@ function quoteResponse(quote: NonNullable<Awaited<ReturnType<typeof loadQuote>>>
         storedStatus: version.status,
         isCurrent,
         canAccept,
+        canRestore,
+        restoreUnavailableReason,
         message: version.message,
         items: version.items.map((item) => ({
           id: item.id,
@@ -512,6 +527,125 @@ router.post("/quotes/:id/versions", async (request, response) => {
   const version = await prisma.quoteVersion.findUnique({ where: { id: versionId }, select: { quoteId: true } });
   if (!version) throw new ApiError(404, "QUOTE_VERSION_NOT_FOUND", "Versão de orçamento não encontrada.");
   response.status(replayed ? 200 : 201).json({ data: await publicQuote(version.quoteId), replayed });
+});
+
+router.post("/quote-versions/:id/reject", async (request, response) => {
+  const identity = await getDemoIdentity(request.header("x-demo-user-id"));
+  const versionId = parseId(request.params);
+  const relation = await prisma.quoteVersion.findUnique({
+    where: { id: versionId },
+    select: {
+      quoteId: true,
+      quote: { select: { conversation: { select: { serviceRequestId: true } } } },
+    },
+  });
+  if (!relation) throw new ApiError(404, "QUOTE_VERSION_NOT_FOUND", "Versão de orçamento não encontrada.");
+
+  try {
+    const result = await prisma.$transaction(async (tx) => {
+      await lockRequest(tx, relation.quote.conversation.serviceRequestId);
+      await lockQuote(tx, relation.quoteId);
+      const quote = await tx.quote.findUnique({ where: { id: relation.quoteId }, include: quoteInclude });
+      if (!quote || quote.conversation.serviceRequest.id !== relation.quote.conversation.serviceRequestId) {
+        throw new ApiError(404, "QUOTE_VERSION_NOT_FOUND", "Versão de orçamento não encontrada.");
+      }
+      if (quote.conversation.serviceRequest.clientUserId !== identity.id) {
+        throw new ApiError(404, "QUOTE_VERSION_NOT_FOUND", "Versão de orçamento não encontrada.");
+      }
+
+      const selected = quote.versions.find((version) => version.id === versionId);
+      const current = quote.versions.at(-1);
+      if (!selected || !isValidVersionChain(quote.versions)) {
+        throw new ApiError(409, "QUOTE_NOT_REJECTABLE", "Não foi possível confirmar a versão atual desta proposta.");
+      }
+      if (selected.status === "REJECTED" && selected.id === current?.id && selected.nextVersion === null) {
+        return { quoteId: quote.id, replayed: true };
+      }
+      if (selected.id !== current?.id || selected.nextVersion !== null || selected.status !== "SENT") {
+        throw new ApiError(409, "QUOTE_NOT_REJECTABLE", "Somente a versão enviada e vigente pode ser recusada.");
+      }
+
+      await tx.quoteVersion.update({ where: { id: selected.id }, data: { status: "REJECTED" } });
+      await tx.message.create({
+        data: {
+          conversationId: quote.conversation.id,
+          senderUserId: identity.id,
+          type: "TEXT",
+          body: "Recusei a proposta. O orçamento original continua salvo no histórico.",
+        },
+      });
+      return { quoteId: quote.id, replayed: false };
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+
+    response.json({ data: await publicQuote(result.quoteId), replayed: result.replayed });
+  } catch (error) {
+    if (isPrismaCode(error, "P2034")) {
+      throw new ApiError(409, "CONCURRENT_QUOTE_CHANGE", "A proposta foi alterada ao mesmo tempo. Atualize a página e tente novamente.");
+    }
+    throw error;
+  }
+});
+
+router.post("/quote-versions/:id/restore", async (request, response) => {
+  const identity = await getDemoIdentity(request.header("x-demo-user-id"));
+  const versionId = parseId(request.params);
+  const relation = await prisma.quoteVersion.findUnique({
+    where: { id: versionId },
+    select: { quoteId: true, quote: { select: { conversation: { select: { serviceRequestId: true } } } } },
+  });
+  if (!relation) throw new ApiError(404, "QUOTE_VERSION_NOT_FOUND", "Versão de orçamento não encontrada.");
+
+  try {
+    const result = await prisma.$transaction(async (tx) => {
+      await lockRequest(tx, relation.quote.conversation.serviceRequestId);
+      await lockQuote(tx, relation.quoteId);
+
+      const quote = await tx.quote.findUnique({ where: { id: relation.quoteId }, include: quoteInclude });
+      if (!quote || quote.conversation.serviceRequest.id !== relation.quote.conversation.serviceRequestId) {
+        throw new ApiError(404, "QUOTE_VERSION_NOT_FOUND", "Versão de orçamento não encontrada.");
+      }
+      if (quote.conversation.serviceRequest.clientUserId !== identity.id) {
+        throw new ApiError(404, "QUOTE_VERSION_NOT_FOUND", "Versão de orçamento não encontrada.");
+      }
+
+      const serviceRequest = quote.conversation.serviceRequest;
+
+      const selected = quote.versions.find((version) => version.id === versionId);
+      const latest = quote.versions.at(-1);
+      const chainValid = isValidVersionChain(quote.versions);
+      if (selected && chainValid && selected.id === latest?.id && selected.nextVersion === null && selected.status === "SENT") {
+        return { quoteId: quote.id, replayed: true };
+      }
+      const activeOrder = serviceRequest.serviceOrders.some((order) => order.status === "ACCEPTED" || order.status === "IN_PROGRESS");
+      const completedOrder = serviceRequest.serviceOrders.some((order) => order.status === "COMPLETED");
+      const reopenedAfterCancellation = wasRequestReopenedAfterCancellations(serviceRequest.serviceOrders, serviceRequest.reopenedAt);
+
+      if (!selected || !chainValid || selected.id !== latest?.id || selected.nextVersion !== null
+        || selected.status !== "REJECTED" || selected.validUntil.getTime() <= Date.now()
+        || quote.conversation.status !== "OPEN" || serviceRequest.status !== "OPEN"
+        || activeOrder || completedOrder || !reopenedAfterCancellation) {
+        throw new ApiError(409, "QUOTE_NOT_RESTORABLE", "Esta proposta não pode ser restaurada agora. Confira se ela ainda é a versão recusada mais recente e se a solicitação está aberta.");
+      }
+
+      await tx.quoteVersion.update({ where: { id: selected.id }, data: { status: "SENT" } });
+      await tx.message.create({
+        data: {
+          conversationId: quote.conversation.id,
+          senderUserId: identity.id,
+          type: "TEXT",
+          body: "Restaurei a proposta recusada. O orçamento original voltou a ficar disponível para comparação.",
+        },
+      });
+      return { quoteId: quote.id, replayed: false };
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+
+    response.json({ data: await publicQuote(result.quoteId), replayed: result.replayed });
+  } catch (error) {
+    if (isPrismaCode(error, "P2034")) {
+      throw new ApiError(409, "CONCURRENT_QUOTE_CHANGE", "A proposta foi alterada ao mesmo tempo. Atualize a página e tente novamente.");
+    }
+    throw error;
+  }
 });
 
 router.post("/quote-versions/:id/accept", async (request, response) => {

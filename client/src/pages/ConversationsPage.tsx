@@ -3,6 +3,7 @@ import { ArrowRight, FileText, MessageCircle } from "lucide-react";
 import { Link } from "react-router-dom";
 import { getMyConversations } from "../api";
 import { Avatar } from "../components/Avatar";
+import { applyCardTilt, resetCardTilt } from "../components/cardMotion";
 import { SiteHeader } from "../components/SiteHeader";
 import { useDemoIdentity } from "../components/useDemoIdentity";
 import { WorkflowState } from "./MyRequestsPage";
@@ -54,7 +55,7 @@ export function ConversationsPage() {
                   const preview = !last ? "Ainda não há mensagens" : last.type === "QUOTE"
                     ? `Proposta · ${last.quoteVersion ? currency.format(Number(last.quoteVersion.totalAmount)) : "abrir orçamento"}`
                     : last.body ?? "Mensagem";
-                  return <Link className="inbox-row" key={conversation.id} to={`/conversas/${conversation.id}`}>
+                  return <Link className="inbox-row interactive-card" key={conversation.id} to={`/conversas/${conversation.id}`} onPointerMove={applyCardTilt} onPointerLeave={resetCardTilt}>
                     <Avatar name={conversation.otherParticipant.name} imageUrl={conversation.otherParticipant.avatarUrl} className="avatar-inbox" />
                     <div className="inbox-row-content">
                       <div className="inbox-title-line"><strong>{conversation.otherParticipant.name}</strong><time dateTime={conversation.lastActivityAt}>{activityLabel(conversation.lastActivityAt)}</time></div>

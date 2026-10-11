@@ -2,6 +2,7 @@
 import { ArrowRight, ClipboardList, Plus } from "lucide-react";
 import { Link } from "react-router-dom";
 import { getMyServiceRequests } from "../api";
+import { applyCardTilt, resetCardTilt } from "../components/cardMotion";
 import { SiteHeader } from "../components/SiteHeader";
 import { useDemoIdentity } from "../components/useDemoIdentity";
 
@@ -39,7 +40,7 @@ export function MyRequestsPage() {
         ) : (
           <div className="request-list">
             {requestsQuery.data.data.map((item) => (
-              <Link className="request-list-card" key={item.id} to={`/solicitacoes/${item.id}`}>
+              <Link className="request-list-card interactive-card" key={item.id} to={`/solicitacoes/${item.id}`} onPointerMove={applyCardTilt} onPointerLeave={resetCardTilt}>
                 <div className="request-card-heading"><span className={`status-pill status-${item.status.toLowerCase()}`}>{statusLabels[item.status] ?? item.status}</span><span className="request-date">{new Intl.DateTimeFormat("pt-BR", { dateStyle: "medium" }).format(new Date(item.createdAt))}</span></div>
                 <h2>{item.title}</h2>
                 <p>{item.description}</p>
@@ -49,7 +50,7 @@ export function MyRequestsPage() {
                   <span>{item.conversationCount ?? 0} {(item.conversationCount ?? 0) === 1 ? "conversa" : "conversas"}</span>
                 </div>
                 <span className="request-card-next-step">{item.status === "OPEN" && (item.conversationCount ?? 0) === 0 ? "Próximo passo: escolher profissionais" : "Acompanhe conversas e propostas"}</span>
-                <span className="request-card-link">Ver detalhes e continuar <ArrowRight size={18} /></span>
+                <span className="request-card-link">Abrir propostas e conversas <ArrowRight size={18} /></span>
               </Link>
             ))}
           </div>

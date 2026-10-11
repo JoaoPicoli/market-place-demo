@@ -1,9 +1,10 @@
 ﻿import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, FileText, MessageCircle, Send } from "lucide-react";
+import { ArrowLeft, FileText, MessageCircle, Plus, Send } from "lucide-react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { getConversation, getConversationMessages, getQuote, sendConversationMessage } from "../api";
 import { Avatar } from "../components/Avatar";
+import { applyCardTilt, resetCardTilt } from "../components/cardMotion";
 import { QuoteComposer } from "../components/QuoteComposer";
 import { SiteHeader } from "../components/SiteHeader";
 import { useDemoIdentity } from "../components/useDemoIdentity";
@@ -22,8 +23,11 @@ export function ConversationPage() {
   const [body, setBody] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
   const [manuallyOpenQuoteComposer, setManuallyOpenQuoteComposer] = useState(false);
+  const [quoteMenuOpen, setQuoteMenuOpen] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const chatPanelRef = useRef<HTMLElement>(null);
+  const quoteMenuRef = useRef<HTMLDivElement>(null);
+  const quoteComposerRef = useRef<HTMLDivElement>(null);
   const conversationQuery = useQuery({
     queryKey: ["conversation", identityId, conversationId],
     queryFn: () => getConversation(identityId!, conversationId),
@@ -57,6 +61,27 @@ export function ConversationPage() {
   const showQuoteComposer = manuallyOpenQuoteComposer || validRevisionId;
 
   useEffect(() => {
+    if (!quoteMenuOpen) return;
+    function closeOnOutsidePointer(event: PointerEvent) {
+      if (!quoteMenuRef.current?.contains(event.target as Node)) setQuoteMenuOpen(false);
+    }
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") setQuoteMenuOpen(false);
+    }
+    document.addEventListener("pointerdown", closeOnOutsidePointer);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeOnOutsidePointer);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [quoteMenuOpen]);
+
+  useEffect(() => {
+    if (!showQuoteComposer || validRevisionId) return;
+    requestAnimationFrame(() => quoteComposerRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
+  }, [showQuoteComposer, validRevisionId]);
+
+  useEffect(() => {
     const panel = chatPanelRef.current;
     if (panel) panel.scrollTo({ top: panel.scrollHeight, behavior: "smooth" });
   }, [messages.length]);
@@ -84,8 +109,7 @@ export function ConversationPage() {
             </section>
             <div className="chat-context"><MessageCircle size={16} /><span>{conversation.serviceRequest.description}</span><span className="chat-role-label">Identidade atual: {conversation.role === "CUSTOMER" ? "consumidor" : "prestador"}</span></div>
 
-            {conversation.canCreateQuote && !showQuoteComposer && <div className="quote-action-row"><div><strong>Formalize sua oferta</strong><span>O orçamento será enviado como um card estruturado nesta conversa.</span></div><button className="button-primary" onClick={() => setManuallyOpenQuoteComposer(true)}><FileText size={16} /> Criar orçamento</button></div>}
-            {showQuoteComposer && conversation.canCreateQuote && (validRevisionId && revisionQuery.isPending ? <WorkflowState title="Carregando proposta" message="Preparando uma nova versão do orçamento." loading /> : validRevisionId && revisionQuery.isError ? <WorkflowState title="Não foi possível abrir a revisão" message={revisionQuery.error.message} retry={() => void revisionQuery.refetch()} /> : <QuoteComposer
+            {showQuoteComposer && conversation.canCreateQuote && <div ref={quoteComposerRef} className="quote-composer-slot">{validRevisionId && revisionQuery.isPending ? <WorkflowState title="Carregando proposta" message="Preparando uma nova versão do orçamento." loading /> : validRevisionId && revisionQuery.isError ? <WorkflowState title="Não foi possível abrir a revisão" message={revisionQuery.error.message} retry={() => void revisionQuery.refetch()} /> : <QuoteComposer
               identityId={identityId!}
               conversationId={conversationId}
               requestId={conversation.serviceRequest.id}
@@ -94,7 +118,7 @@ export function ConversationPage() {
               initialServiceId={revision?.service?.id ?? null}
               initialServiceTitle={revision?.versions.find((version) => version.isCurrent)?.serviceTitleSnapshot ?? null}
               onCancel={() => { setManuallyOpenQuoteComposer(false); if (validRevisionId) navigate(`/conversas/${conversationId}`, { replace: true }); }}
-            />)}
+            />}</div>}
 
             <section ref={chatPanelRef} className="chat-panel" aria-label="Histórico da conversa">
               {messagesQuery.isPending ? <WorkflowState title="Carregando mensagens" message="Um instante." loading /> : messagesQuery.isError ? <WorkflowState title="Não foi possível carregar as mensagens" message={messagesQuery.error.message} retry={() => void messagesQuery.refetch()} /> : messages.length === 0 ? <div className="chat-empty"><MessageCircle size={24} /><strong>Esta conversa ainda não tem mensagens</strong><span>Envie uma mensagem para iniciar o diálogo.</span></div> : (
@@ -105,7 +129,7 @@ export function ConversationPage() {
                       {!mine && <Avatar name={message.sender.name} imageUrl={message.sender.avatarUrl} className="avatar-message" />}
                       <div className={`message-bubble ${message.type === "QUOTE" ? "message-quote-bubble" : ""}`}>
                         <span className="message-author">{mine ? "Você" : message.sender.name}</span>
-                        {message.type === "QUOTE" && message.quoteVersion ? <div className="chat-quote-card">
+                        {message.type === "QUOTE" && message.quoteVersion ? <div className="chat-quote-card interactive-card" onPointerMove={applyCardTilt} onPointerLeave={resetCardTilt}>
                           <div className="chat-quote-title"><FileText size={16} /><strong>Orçamento · versão {message.quoteVersion.version}</strong></div>
                           <b>{new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(Number(message.quoteVersion.totalAmount))}</b>
                           <p>{message.quoteVersion.scopeDescription}</p>
@@ -122,8 +146,22 @@ export function ConversationPage() {
             </section>
             {messagesQuery.isError && <button className="button-secondary" onClick={() => void messagesQuery.refetch()}>Tentar novamente</button>}
             {conversation.canSend ? <form className="chat-composer" onSubmit={submit}>
-              <label className="sr-only" htmlFor="chat-message">Sua mensagem</label>
-              <textarea id="chat-message" value={body} maxLength={4_000} rows={2} placeholder="Escreva uma mensagem…" onChange={(event) => setBody(event.target.value)} disabled={sendMutation.isPending} />
+              <div className="chat-input-row">
+                {conversation.canCreateQuote && <div className="glide-action-menu" ref={quoteMenuRef}>
+                  <button className="chat-add-action" type="button" aria-label="Abrir opções da conversa" aria-haspopup="menu" aria-expanded={quoteMenuOpen} aria-controls="chat-action-menu" onClick={() => setQuoteMenuOpen((open) => !open)}>
+                    <Plus size={21} aria-hidden="true" />
+                  </button>
+                  {quoteMenuOpen && <div className="glide-select-menu" id="chat-action-menu" role="menu" aria-label="Opções da conversa">
+                    <span className="glide-menu-eyebrow">Adicionar à conversa</span>
+                    <button className="glide-menu-option" type="button" role="menuitem" onClick={() => { setQuoteMenuOpen(false); setManuallyOpenQuoteComposer(true); }}>
+                      <FileText size={18} aria-hidden="true" />
+                      <span><strong>Criar orçamento</strong><small>Enviar uma proposta formal</small></span>
+                    </button>
+                  </div>}
+                </div>}
+                <label className="sr-only" htmlFor="chat-message">Sua mensagem</label>
+                <textarea id="chat-message" value={body} maxLength={4_000} rows={2} placeholder="Escreva uma mensagem…" onChange={(event) => setBody(event.target.value)} disabled={sendMutation.isPending} />
+              </div>
               <div className="composer-footer"><span>{body.length}/4000</span><button className="button-primary" type="submit" disabled={sendMutation.isPending || messagesQuery.isPending || messagesQuery.isError}><Send size={16} />{sendMutation.isPending ? "Enviando…" : "Enviar"}</button></div>
               {(formError || sendMutation.isError) && <p className="form-error" role="alert">{formError ?? (sendMutation.isError ? sendMutation.error.message : "Não foi possível enviar a mensagem.")}</p>}
             </form> : <div className="closed-conversation-note">Esta conversa está encerrada e não aceita novas mensagens.</div>}
